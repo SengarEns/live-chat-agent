@@ -8,8 +8,8 @@ import type {
   ToastProps,
 } from "@/components/ui/toast"
 
-const TOAST_LIMIT = 1
-const TOAST_REMOVE_DELAY = 1000000
+const TOAST_LIMIT = 3 // Allow slightly more toasts
+const TOAST_REMOVE_DELAY = 5000 // Default dismiss delay 5s
 
 type ToasterToast = ToastProps & {
   id: string
@@ -58,9 +58,10 @@ interface State {
 
 const toastTimeouts = new Map<string, ReturnType<typeof setTimeout>>()
 
-const addToRemoveQueue = (toastId: string) => {
+const addToRemoveQueue = (toastId: string, removeDelay: number = TOAST_REMOVE_DELAY) => {
   if (toastTimeouts.has(toastId)) {
-    return
+    // Clear existing timeout if queueing again (e.g., user dismisses manually)
+    clearTimeout(toastTimeouts.get(toastId))
   }
 
   const timeout = setTimeout(() => {
@@ -69,7 +70,7 @@ const addToRemoveQueue = (toastId: string) => {
       type: "REMOVE_TOAST",
       toastId: toastId,
     })
-  }, TOAST_REMOVE_DELAY)
+  }, removeDelay) // Use provided or default delay
 
   toastTimeouts.set(toastId, timeout)
 }
@@ -79,7 +80,8 @@ export const reducer = (state: State, action: Action): State => {
     case "ADD_TOAST":
       return {
         ...state,
-        toasts: [action.toast, ...state.toasts].slice(0, TOAST_LIMIT),
+        // Add new toast to the end for chronological order appearance (bottom up)
+        toasts: [...state.toasts, action.toast].slice(-TOAST_LIMIT), // Limit from the start
       }
 
     case "UPDATE_TOAST":
@@ -93,11 +95,11 @@ export const reducer = (state: State, action: Action): State => {
     case "DISMISS_TOAST": {
       const { toastId } = action
 
-      // ! Side effects ! - This could be extracted into a dismissToast() action,
-      // but I'll keep it here for simplicity
+      // Side effect: remove dismissed toast after a short delay
       if (toastId) {
         addToRemoveQueue(toastId)
       } else {
+        // Dismiss all toasts
         state.toasts.forEach((toast) => {
           addToRemoveQueue(toast.id)
         })
@@ -109,7 +111,7 @@ export const reducer = (state: State, action: Action): State => {
           t.id === toastId || toastId === undefined
             ? {
                 ...t,
-                open: false,
+                open: false, // Trigger dismiss animation
               }
             : t
         ),
@@ -117,11 +119,13 @@ export const reducer = (state: State, action: Action): State => {
     }
     case "REMOVE_TOAST":
       if (action.toastId === undefined) {
+        // Remove all toasts immediately
         return {
           ...state,
           toasts: [],
         }
       }
+      // Filter out the toast to remove it from state
       return {
         ...state,
         toasts: state.toasts.filter((t) => t.id !== action.toastId),
@@ -135,14 +139,16 @@ let memoryState: State = { toasts: [] }
 
 function dispatch(action: Action) {
   memoryState = reducer(memoryState, action)
+  // Notify all listeners of the state change
   listeners.forEach((listener) => {
     listener(memoryState)
   })
 }
 
-type Toast = Omit<ToasterToast, "id">
+// Extend Toast type to include duration
+type Toast = Omit<ToasterToast, "id"> & { duration?: number }
 
-function toast({ ...props }: Toast) {
+function toast({ duration = TOAST_REMOVE_DELAY, ...props }: Toast) {
   const id = genId()
 
   const update = (props: ToasterToast) =>
@@ -159,10 +165,14 @@ function toast({ ...props }: Toast) {
       id,
       open: true,
       onOpenChange: (open) => {
-        if (!open) dismiss()
+        if (!open) dismiss() // Call dismiss when Radix state changes to closed
       },
     },
   })
+
+   // Automatically dismiss after duration
+   addToRemoveQueue(id, duration);
+
 
   return {
     id: id,
@@ -175,14 +185,16 @@ function useToast() {
   const [state, setState] = React.useState<State>(memoryState)
 
   React.useEffect(() => {
+    // Register listener
     listeners.push(setState)
+    // Cleanup listener
     return () => {
       const index = listeners.indexOf(setState)
       if (index > -1) {
         listeners.splice(index, 1)
       }
     }
-  }, [state])
+  }, [state]) // Re-subscribe if state instance changes (shouldn't normally)
 
   return {
     ...state,
