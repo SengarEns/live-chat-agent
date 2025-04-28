@@ -37,22 +37,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setLoading(true); // Ensure loading is true before async operation
         setAuthError(null); // Reset error on new attempt
         try {
-          // Basic check if API key seems configured (read from env vars now)
-           if (!process.env.NEXT_PUBLIC_FIREBASE_API_KEY) {
-             console.error("Firebase API Key environment variable (NEXT_PUBLIC_FIREBASE_API_KEY) is missing.");
-             setAuthError("Firebase API Key is missing. Please configure it in your .env file.");
-             setLoading(false);
-             return; // Stop execution if key is missing
-           }
+          // Removed explicit check for NEXT_PUBLIC_FIREBASE_API_KEY as config is now hardcoded in firebase.ts
           // Attempt anonymous sign-in
           const userCredential = await signInAnonymously(auth);
           setUser(userCredential.user);
           setAuthError(null); // Clear error on success
+          console.log("Anonymous sign-in successful:", userCredential.user.uid);
         } catch (error: any) { // Catch specific Firebase errors
             console.error("Anonymous sign-in failed:", error);
             // Handle specific Firebase auth errors
             if (error.code === AuthErrorCodes.INVALID_API_KEY) {
-               setAuthError("Firebase API Key is invalid. Please check your .env configuration.");
+               setAuthError("Firebase API Key is invalid. Please check your Firebase configuration.");
             } else if (error.code === 'auth/network-request-failed') {
                 setAuthError("Network error during authentication. Please check your internet connection and Firebase backend status/rules.");
             } else if (error.code === 'auth/operation-not-allowed') {
@@ -69,6 +64,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(currentUser);
         setAuthError(null); // Clear error if auth state changes successfully
         setLoading(false);
+        console.log("User already signed in:", currentUser.uid);
       }
     }, (error) => {
         // Handle errors during the listener setup/execution itself
@@ -102,7 +98,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>Authentication Error</AlertTitle>
               <AlertDescription>
-                 {authError} Please ensure your Firebase project setup and environment variables (`.env` file) are correct and that the necessary sign-in methods are enabled in the Firebase console.
+                 {authError} Please ensure your Firebase project setup (in `src/lib/firebase.ts`) is correct and that the necessary sign-in methods are enabled in the Firebase console. Check browser console logs for more details.
               </AlertDescription>
            </Alert>
        </div>
