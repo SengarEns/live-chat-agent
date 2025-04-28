@@ -9,6 +9,7 @@ import { auth } from '@/lib/firebase'; // auth might be null if initialization f
 import { Skeleton } from '@/components/ui/skeleton'; // Loading state
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert" // Import Alert
 import { AlertTriangle } from 'lucide-react'; // Icon for alert
+import { FirebaseError } from 'firebase/app'; // Import FirebaseError
 
 interface AuthContextProps {
   user: User | null;
@@ -26,7 +27,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     // Check if Firebase Auth service was initialized correctly
     if (!auth) {
-        setAuthError("Firebase Authentication service failed to initialize. Check console and Firebase config.");
+        setAuthError("Firebase Authentication service failed to initialize. Check console and Firebase config in src/lib/firebase.ts.");
         setLoading(false);
         return; // Stop if auth is not available
     }
@@ -37,7 +38,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setLoading(true); // Ensure loading is true before async operation
         setAuthError(null); // Reset error on new attempt
         try {
-          // Removed explicit check for NEXT_PUBLIC_FIREBASE_API_KEY as config is now hardcoded in firebase.ts
+          console.log("No current user, attempting anonymous sign-in...");
           // Attempt anonymous sign-in
           const userCredential = await signInAnonymously(auth);
           setUser(userCredential.user);
@@ -45,17 +46,25 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           console.log("Anonymous sign-in successful:", userCredential.user.uid);
         } catch (error: any) { // Catch specific Firebase errors
             console.error("Anonymous sign-in failed:", error);
-            // Handle specific Firebase auth errors
-            if (error.code === AuthErrorCodes.INVALID_API_KEY) {
-               setAuthError("Firebase API Key is invalid. Please check your Firebase configuration.");
-            } else if (error.code === 'auth/network-request-failed') {
-                setAuthError("Network error during authentication. Please check your internet connection and Firebase backend status/rules.");
-            } else if (error.code === 'auth/operation-not-allowed') {
-                 setAuthError("Anonymous sign-in is not enabled in your Firebase project settings.");
+            let errorMessage = `Authentication failed: ${error.message}`;
+            if (error instanceof FirebaseError) {
+                 errorMessage = `Authentication failed: ${error.message} (Code: ${error.code})`;
+                 // Handle specific Firebase auth errors
+                if (error.code === AuthErrorCodes.INVALID_API_KEY || error.code === 'auth/invalid-api-key') {
+                   errorMessage = "Firebase API Key is invalid. Please check your Firebase configuration in src/lib/firebase.ts.";
+                } else if (error.code === 'auth/network-request-failed') {
+                    errorMessage = "Network error during authentication. Please check your internet connection and Firebase backend status/rules.";
+                } else if (error.code === 'auth/operation-not-allowed') {
+                     errorMessage = "Anonymous sign-in is not enabled in your Firebase project settings. Please enable it in the Firebase console (Authentication > Sign-in method).";
+                } else if (error.message.includes('CONFIGURATION_NOT_FOUND')) {
+                    errorMessage = "Firebase configuration not found or invalid. Please verify your project settings (Project ID, API Key) in src/lib/firebase.ts and ensure the Firebase project exists and is correctly set up.";
+                }
+            } else if (error.message && error.message.includes('CONFIGURATION_NOT_FOUND')) {
+                // Catch cases where it might not be a FirebaseError instance but contains the message
+                 errorMessage = "Firebase configuration not found or invalid. Please verify your project settings (Project ID, API Key) in src/lib/firebase.ts and ensure the Firebase project exists and is correctly set up.";
             }
-             else {
-               setAuthError(`Authentication failed: ${error.message} (Code: ${error.code})`);
-            }
+
+            setAuthError(errorMessage);
         } finally {
             setLoading(false);
         }
@@ -64,7 +73,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setUser(currentUser);
         setAuthError(null); // Clear error if auth state changes successfully
         setLoading(false);
-        console.log("User already signed in:", currentUser.uid);
+        console.log("User already signed in or session restored:", currentUser.uid);
       }
     }, (error) => {
         // Handle errors during the listener setup/execution itself
@@ -94,11 +103,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
    if (authError) {
     return (
       <div className="flex items-center justify-center min-h-screen p-4">
-          <Alert variant="destructive" className="max-w-md">
+          <Alert variant="destructive" className="max-w-lg"> {/* Increased max-width */}
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>Authentication Error</AlertTitle>
               <AlertDescription>
-                 {authError} Please ensure your Firebase project setup (in `src/lib/firebase.ts`) is correct and that the necessary sign-in methods are enabled in the Firebase console. Check browser console logs for more details.
+                 {authError}
+                 <br /><br />
+                 Please check the following:
+                 <ul className="list-disc pl-5 mt-2 space-y-1">
+                    <li>Verify the Firebase configuration details (apiKey, projectId, authDomain etc.) in <strong>src/lib/firebase.ts</strong> are correct for your project.</li>
+                    <li>Ensure Anonymous sign-in is enabled in the Firebase Console (Authentication &gt; Sign-in method).</li>
+                    <li>If using API key restrictions (HTTP referrers, etc.) in Google Cloud Console, ensure they allow your development environment (e.g., `localhost` with the correct port) or temporarily disable them for testing.</li>
+                    <li>Check your internet connection and if Firebase services are experiencing outages.</li>
+                    <li>Review browser console logs for more detailed error messages.</li>
+                 </ul>
               </AlertDescription>
            </Alert>
        </div>
@@ -108,7 +126,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   // Render children only if user is authenticated (or anonymous sign-in worked) and no error
   return (
     <AuthContext.Provider value={{ user, loading, authError }}>
-      {user ? children : null /* Or render a specific "Login Required" component if user is null after loading and no error */}
+      {/* Render children immediately if user exists, otherwise wait for loading to finish */}
+      {/* If loading is finished and user is still null, something might be wrong, but AuthProvider handles the error display */}
+      {children}
     </AuthContext.Provider>
   );
 };
