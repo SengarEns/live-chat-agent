@@ -1,17 +1,14 @@
 import { AgentDashboard } from '@/components/agent/agent-dashboard';
-import { AuthProvider } from '@/components/providers/auth-provider'; // Reuse auth provider if agent login needed
-import { Toaster } from "@/components/ui/toaster";
+import { AuthProvider } from '@/components/providers/auth-provider';
+// Removed Toaster import, relying on the global layout Toaster
 
 export default function AgentPage() {
-  // Potential: Add agent-specific authentication/authorization checks here
+  // Agent-specific auth checks can remain if needed
   return (
-    // If agents need to log in differently, create a specific AgentAuthProvider
-    // For now, assuming agents might also use the app or have admin access
     <AuthProvider>
-        <main className="flex min-h-screen flex-col">
-            <AgentDashboard />
-            <Toaster />
-        </main>
+        {/* Remove min-h-screen and flex-col as layout handles this */}
+        {/* Let AgentDashboard fill the available space */}
+        <AgentDashboard />
      </AuthProvider>
   );
 }
